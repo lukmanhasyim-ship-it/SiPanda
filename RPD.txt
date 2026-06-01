@@ -1,0 +1,122 @@
+# Dokumen Rancangan Pembangunan Produk (RPD)
+
+## Sistem Penilaian Jawaban Siswa Berbasis AI (Serverless)
+
+## 1. Ringkasan Eksekutif
+
+Aplikasi ini bertujuan untuk mendigitalisasi proses penilaian lembar jawaban siswa menggunakan
+teknologi _Optical Character Recognition_ (OCR) dan _Artificial Intelligence_ (Gemini). Fokus utama
+adalah efisiensi bagi guru dengan arsitektur _serverless_ yang ringan, tanpa penyimpanan gambar
+permanen (data privacy-centric).
+
+## 2. Objektif Produk
+
+```
+Efisiensi: Mengurangi waktu koreksi manual guru secara signifikan.
+Objektivitas: Memberikan penilaian yang konsisten berdasarkan rubrik analitik yang telah
+ditentukan.
+Privasi: Tidak menyimpan data gambar siswa (hanya pemrosesan teks on-the-fly ).
+```
+## 3. Arsitektur Teknis
+
+```
+Frontend: Antarmuka web responsif (HTML5/JS) untuk unggah gambar.
+Middleware (Serverless Function): Fungsi backend untuk menjembatani OCR dan AI.
+OCR Engine: Layanan ekstraksi teks dari gambar (misal: Google Cloud Vision API).
+AI Engine: Google Gemini API (model gemini-1.5-flash untuk kecepatan & efisiensi).
+Database/CMS: Google Sheets (sebagai repositori data terstruktur dan CMS Rubrik).
+```
+## 4. Alur Kerja (Workflow)
+
+```
+1. Input: Guru mengunggah foto lembar jawaban.
+2. Ekstraksi: Gambar dikirim ke API OCR untuk mengubah visual menjadi teks.
+3. Analisis AI: Teks hasil OCR dikirim bersama dengan Rubrik Penilaian (diambil dari Sheet
+Database_Rubrik) ke Gemini API.
+4. Evaluasi: AI melakukan penilaian berdasarkan deskriptor rubrik.
+5. Penyimpanan: Hasil (skor & feedback) dikirim secara otomatis ke Sheet Hasil_Penilaian.
+```
+## 5. Strategi Implementasi (Tahapan RPD)
+
+```
+Fase 1: Persiapan (Minggu 1): Penyiapan Google Sheets (Tab Database_Siswa,
+Database_Rubrik & Hasil_Penilaian) dan Prompt Engineering.
+Fase 2: Pembangunan (Minggu 2-3): Pengembangan UI, integrasi OCR, dan skrip fetch
+rubrik/data siswa dari Sheet ke Gemini API.
+Fase 3: Pengujian (Minggu 4): Uji akurasi penilaian AI dan kemudahan guru dalam mengubah
+rubrik/data siswa via Sheet.
+```
+## 6. Pertimbangan Keamanan & Privasi
+
+```
+Data Minimization: Gambar tidak disimpan di server setelah teks diekstraksi.
+```
+
+```
+Keamanan: API Key dibatasi ( restricted ) untuk domain aplikasi saja.
+```
+## 7. Manajemen Data Siswa
+
+Guru mengelola daftar siswa melalui tab Database_Siswa di Google Sheets. Sistem akan
+menggunakan ID_Siswa atau nama untuk melakukan validasi input sebelum proses penilaian.
+
+Struktur Tabel Database_Siswa:
+
+```
+Nama Kolom Deskripsi
+```
+```
+NIS Nomor Induk Siswa (Primary Key).
+Nama_Siswa Nama lengkap siswa.
+```
+```
+Kelas Tingkat kelas atau grup siswa.
+```
+## 8. Manajemen Rubrik oleh Guru
+
+Guru dapat mengelola rubrik penilaian dengan mengedit langsung pada tab Database_Rubrik di
+Google Sheets. Sistem akan membaca data tersebut secara dinamis berdasarkan Kelas dan
+Mapel yang relevan setiap kali proses penilaian dilakukan.
+
+Struktur Tabel Database_Rubrik:
+
+```
+Nama Kolom Deskripsi
+```
+```
+Kelas Tingkat kelas atau grup siswa.
+Mapel Nama mata pelajaran.
+```
+```
+Aspek_Penilaian Nama kategori yang dinilai (Contoh: Tata Bahasa).
+Skor_4 Deskriptor untuk level Sangat Baik.
+```
+```
+Skor_3 Deskriptor untuk level Baik.
+Skor_2 Deskriptor untuk level Cukup.
+```
+```
+Skor_1 Deskriptor untuk level Kurang.
+```
+## 9. Skema Data Google Sheets
+
+```
+Nama Kolom (Tab Hasil) Deskripsi
+```
+```
+Timestamp Waktu penilaian dilakukan.
+NIS Referensi ke NIS dari Database_Siswa.
+```
+```
+Nama_Siswa Terintegrasi otomatis dari Database_Siswa berdasarkan NIS.
+```
+
+Kelas Terintegrasi otomatis dari Database_Siswa berdasarkan NIS.
+
+Hasil_OCR Salinan teks hasil ekstraksi gambar.
+
+Skor_Analitik Skor per aspek (sesuai rubrik).
+
+Feedback_AI Catatan perbaikan dari AI.
+
+
