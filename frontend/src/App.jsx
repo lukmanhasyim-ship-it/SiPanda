@@ -12,13 +12,14 @@ import SiswaManager from './components/SiswaManager'
 import KelasManager from './components/KelasManager'
 import MapelManager from './components/MapelManager'
 import StudentDashboard from './components/StudentDashboard'
+import TeacherDashboard from './components/TeacherDashboard'
 import { processAnswer, submitAssessmentReview } from './services/hasilApi'
 import { getCurrentUser, isLoggedIn, logout } from './services/authStore'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(isLoggedIn())
   const [currentUser, setCurrentUser] = useState(getCurrentUser())
-  const [activeNav, setActiveNav] = useState('upload')
+  const [activeNav, setActiveNav] = useState('dashboard')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [aiReview, setAiReview] = useState(null)
@@ -83,6 +84,10 @@ export default function App() {
   }
 
   const renderContent = () => {
+    if (activeNav === 'dashboard') {
+      return <TeacherDashboard user={currentUser} onNavigate={setActiveNav} />
+    }
+
     if (activeNav === 'siswa') {
       return <SiswaManager />
     }
