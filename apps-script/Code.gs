@@ -22,6 +22,7 @@ var CONFIG = {
 var SHEET_NAMES = {
   SISWA: 'Database_Siswa',
   RUBRIK: 'Database_Rubrik',
+  SOAL: 'Database_Soal',
   HASIL: 'Hasil_Penilaian',
   KELAS: 'Database_Kelas',
   MAPEL: 'Database_Mapel',
@@ -45,6 +46,44 @@ function doPost(e) {
       return handleVerifyGoogleToken(data)
     }
 
+    if (action === 'getRegistrationClasses') {
+      return sendJson({ success: true, data: getRegistrationClasses() })
+    }
+
+    if (action === 'getRegistrationStudents') {
+      var registrationClass = String(data.kelas || '').trim()
+      if (!registrationClass) return sendJson({ success: false, error: 'Kelas wajib dipilih' })
+      return sendJson({ success: true, data: getRegistrationStudents(registrationClass) })
+    }
+
+    if (action === 'getStudentDashboard') {
+      var studentUser = verifyGoogleToken(data.googleToken || '')
+      if (!studentUser) return sendJson({ success: false, authError: true, error: 'Token Google siswa tidak valid. Silakan masuk kembali.' })
+      var linkedStudent = getSiswaByEmail(studentUser.email)
+      if (!linkedStudent) return sendJson({ success: false, authError: true, error: 'Email ini tidak terhubung ke data siswa.' })
+      return sendJson({
+        success: true,
+        data: {
+          siswa: { nis: linkedStudent.nis, nama: linkedStudent.nama, kelas: linkedStudent.kelas },
+          hasil: getAllHasilByNis(linkedStudent.nis),
+        },
+      })
+    }
+
+    if (action === 'getStudentDashboard') {
+      var studentUser = verifyGoogleToken(data.googleToken || '')
+      if (!studentUser) return sendJson({ success: false, authError: true, error: 'Token Google siswa tidak valid. Silakan masuk kembali.' })
+      var linkedStudent = getSiswaByEmail(studentUser.email)
+      if (!linkedStudent) return sendJson({ success: false, authError: true, error: 'Email ini tidak terhubung ke data siswa.' })
+      return sendJson({
+        success: true,
+        data: {
+          siswa: { nis: linkedStudent.nis, nama: linkedStudent.nama, kelas: linkedStudent.kelas },
+          hasil: getAllHasilByNis(linkedStudent.nis),
+        },
+      })
+    }
+
     var user = requireAuth(data)
     if (!user) {
       return sendJson({ success: false, authError: true, error: 'Token tidak valid. Silakan masuk ulang.' })
@@ -52,6 +91,37 @@ function doPost(e) {
 
     if (action === 'processAnswer') {
       return handleProcessAnswer(data)
+    }
+
+    if (action === 'getSoalByMapel') {
+      var soalKelas = String(data.kelas || '').trim()
+      var soalMapel = String(data.mapel || '').trim()
+      if (!soalKelas || !soalMapel) return sendJson({ success: false, error: 'Kelas dan Mapel wajib diisi' })
+      return sendJson({ success: true, data: getSoalByKelasMapel(soalKelas, soalMapel) })
+    }
+
+    if (action === 'getAllSoal') {
+      return sendJson({ success: true, data: getAllSoal() })
+    }
+
+    if (action === 'addSoal') {
+      var soalKelasBaru = String(data.kelas || '').trim()
+      var soalMapelBaru = String(data.mapel || '').trim()
+      var soalNomorBaru = String(data.nomor || '').trim()
+      var soalKunciBaru = String(data.kunci || '').trim().toUpperCase()
+      if (!soalKelasBaru || !soalMapelBaru || !/^\d+$/.test(soalNomorBaru) || !/^[ABCDE]$/.test(soalKunciBaru)) {
+        return sendJson({ success: false, error: 'Kelas, mapel, nomor soal, dan kunci A-E wajib diisi dengan benar' })
+      }
+      return sendJson({ success: true, data: addSoal(soalKelasBaru, soalMapelBaru, soalNomorBaru, soalKunciBaru) })
+    }
+
+    if (action === 'deleteSoal') {
+      var deletedSoal = deleteSoal(String(data.kelas || '').trim(), String(data.mapel || '').trim(), String(data.nomor || '').trim())
+      return sendJson({ success: true, data: { deleted: deletedSoal } })
+    }
+
+    if (action === 'submitAssessmentReview') {
+      return handleAssessmentReview(data)
     }
 
     if (action === 'getSiswaByKelas') {
@@ -167,6 +237,17 @@ function doPost(e) {
       return sendJson({ success: true, data: { imported: importMapelCount } })
     }
 
+    if (action === 'importRubrik') {
+      if (!data.rows || !Array.isArray(data.rows) || data.rows.length === 0) {
+        return sendJson({ success: false, error: 'Data rubrik atau kunci jawaban wajib diisi' })
+      }
+      var importRubrikResult = importRubrik(data.rows)
+      if (importRubrikResult.rubrikImported + importRubrikResult.soalImported === 0) {
+        return sendJson({ success: false, error: 'Tidak ada baris rubrik atau kunci jawaban valid untuk diimport' })
+      }
+      return sendJson({ success: true, data: importRubrikResult })
+    }
+
     return sendJson({ success: false, error: 'Aksi tidak dikenal: ' + action })
   } catch (err) {
     return sendJson({ success: false, error: err.message })
@@ -179,13 +260,25 @@ function handleProcessAnswer(data) {
   var nis      = String(data.nis || '').trim()
   var kelas    = String(data.kelas || '').trim()
   var mapel    = String(data.mapel || '').trim()
-  var image    = data.image || ''
-  var fileName = data.fileName || ''
+  var images = Array.isArray(data.images) ? data.images : (data.image ? [data.image] : [])
+  images = images.map(function(image) {
+    if (typeof image === 'string') {
+      var mimeMatch = image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
+      return { data: image, mimeType: mimeMatch ? mimeMatch[1] : 'image/jpeg' }
+    }
+    return image
+  })
 
   if (!nis)     return sendJson({ success: false, error: 'NIS wajib diisi' })
   if (!kelas)   return sendJson({ success: false, error: 'Kelas wajib diisi' })
   if (!mapel)   return sendJson({ success: false, error: 'Mata pelajaran wajib diisi' })
-  if (!image)   return sendJson({ success: false, error: 'Gambar tidak ditemukan' })
+  if (images.length === 0) return sendJson({ success: false, error: 'Pilih minimal satu gambar lembar jawaban' })
+  if (images.length > 10) return sendJson({ success: false, error: 'Maksimal 10 gambar per penilaian' })
+  for (var imageIndex = 0; imageIndex < images.length; imageIndex++) {
+    if (!images[imageIndex] || !images[imageIndex].data) {
+      return sendJson({ success: false, error: 'Data gambar ke-' + (imageIndex + 1) + ' tidak valid' })
+    }
+  }
 
   // 1. Validasi siswa
   var siswa = getSiswaByNis(nis)
@@ -200,25 +293,10 @@ function handleProcessAnswer(data) {
   }
 
   // 3. OCR via Gemini
-  var ocrText = extractTextFromImage(image)
+  var ocrText = extractTextFromImage(images)
 
   // 4. Penilaian AI
   var aiResult = nilaiJawaban(ocrText, rubrik, siswa, mapel)
-
-  // 5. Simpan hasil
-  simpanHasil({
-    timestamp: new Date().toISOString(),
-    nis: nis,
-    namaSiswa: siswa.nama,
-    kelas: kelas,
-    mapel: mapel,
-    hasilOCR: ocrText,
-    skorAnalitik: JSON.stringify(aiResult.skorAnalitik),
-    feedbackAI: aiResult.feedbackAI || '',
-    rekomendasi: aiResult.rekomendasi || '',
-    totalSkor: aiResult.totalSkor || 0,
-    totalMaks: aiResult.totalMaks || 0,
-  })
 
   return sendJson({
     success: true,
@@ -234,6 +312,95 @@ function handleProcessAnswer(data) {
       totalMaks: aiResult.totalMaks,
       feedbackAI: aiResult.feedbackAI,
       rekomendasi: aiResult.rekomendasi,
+    },
+  })
+}
+
+function handleAssessmentReview(data) {
+  var aiResult = data.aiResult || {}
+  var nis = String(aiResult.nis || '').trim()
+  var kelas = String(aiResult.kelas || '').trim()
+  var mapel = String(aiResult.mapel || '').trim()
+  var jawaban = data.jawaban || []
+  if (!nis || !kelas || !mapel) return sendJson({ success: false, error: 'Data hasil AI tidak lengkap' })
+  if (!Array.isArray(jawaban)) return sendJson({ success: false, error: 'Jawaban harus berupa daftar pilihan' })
+
+  var siswa = getSiswaByNis(nis)
+  if (!siswa || siswa.kelas !== kelas) return sendJson({ success: false, error: 'Siswa tidak ditemukan pada kelas yang dipilih' })
+  var soal = getSoalByKelasMapel(kelas, mapel)
+  if (soal.length === 0) return sendJson({ success: false, error: 'Kunci soal untuk mapel ini belum tersedia' })
+  var jawabanByNomor = {}
+  for (var i = 0; i < jawaban.length; i++) {
+    var nomor = String(jawaban[i].nomor || '').trim()
+    var pilihan = String(jawaban[i].jawaban || '').trim().toUpperCase()
+    if (!/^[ABCDE-]$/.test(pilihan)) return sendJson({ success: false, error: 'Setiap soal harus dijawab dengan pilihan A sampai E atau kosong' })
+    if (!soal.some(function(item) { return String(item.nomor) === nomor })) return sendJson({ success: false, error: 'Nomor soal tidak sesuai Database_Soal' })
+    jawabanByNomor[nomor] = pilihan
+  }
+  if (jawaban.length !== soal.length) return sendJson({ success: false, error: 'Jumlah jawaban tidak sesuai dengan jumlah soal pada Database_Soal' })
+
+  var skorAnalitik = Array.isArray(aiResult.skorAnalitik) ? aiResult.skorAnalitik : []
+  var skorEsai = 0
+  var maksEsai = 0
+  for (var e = 0; e < skorAnalitik.length; e++) {
+    var skorEsaiItem = skorAnalitik[e]
+    var skorMaksEsai = Math.max(1, Number(skorEsaiItem.skorMaks) || 4)
+    skorEsaiItem.skor = Math.max(1, Math.min(skorMaksEsai, Number(skorEsaiItem.skor) || 1))
+    skorEsaiItem.skorMaks = skorMaksEsai
+    skorEsai += skorEsaiItem.skor
+    maksEsai += skorMaksEsai
+  }
+
+  var skorPG = 0
+  for (var j = 0; j < soal.length; j++) {
+    var kunci = soal[j]
+    var jawabanSiswa = jawabanByNomor[String(kunci.nomor)]
+    var benar = jawabanSiswa === kunci.kunci
+    if (benar) skorPG++
+    skorAnalitik.push({
+      aspek: 'Soal ' + kunci.nomor,
+      skor: benar ? 1 : 0,
+      skorMaks: 1,
+      deskriptor: benar ? 'Benar' : 'Jawaban: ' + (jawabanSiswa === '-' ? 'Kosong' : jawabanSiswa) + ' | Kunci: ' + kunci.kunci,
+      feedback: benar ? 'Jawaban benar' : 'Jawaban belum tepat',
+    })
+  }
+
+  var totalSkor = skorEsai + skorPG
+  var totalMaks = maksEsai + soal.length
+  var nilaiAkhir = totalMaks > 0 ? Math.round((totalSkor / totalMaks) * 100) : 0
+  var feedbackAI = String(aiResult.feedbackAI || '') + '\nPG benar: ' + skorPG + ' dari ' + soal.length + ' soal.'
+  var rekomendasi = String(aiResult.rekomendasi || '')
+  var hasilJawaban = jawaban.map(function(item) { return item.nomor + '. ' + String(item.jawaban).toUpperCase() }).join('\n')
+
+  simpanHasil({
+    nis: nis,
+    namaSiswa: siswa.nama,
+    kelas: kelas,
+    mapel: mapel,
+    hasilOCR: String(aiResult.hasilOCR || '') + '\n\nJawaban PG\n' + hasilJawaban,
+    skorAnalitik: JSON.stringify(skorAnalitik),
+    feedbackAI: feedbackAI,
+    rekomendasi: rekomendasi,
+    totalSkor: totalSkor,
+    totalMaks: totalMaks,
+  })
+
+  return sendJson({
+    success: true,
+    data: {
+      nis: nis,
+      namaSiswa: siswa.nama,
+      kelas: kelas,
+      mapel: mapel,
+      timestamp: new Date().toISOString(),
+      hasilOCR: String(aiResult.hasilOCR || '') + '\n\nJawaban PG\n' + hasilJawaban,
+      skorAnalitik: skorAnalitik,
+      totalSkor: totalSkor,
+      totalMaks: totalMaks,
+      nilaiAkhir: nilaiAkhir,
+      feedbackAI: feedbackAI,
+      rekomendasi: rekomendasi,
     },
   })
 }
@@ -268,8 +435,7 @@ function verifyGoogleToken(token) {
   var payload = JSON.parse(response.getContentText())
 
   if (payload.aud !== CONFIG.GOOGLE_CLIENT_ID) return null
-  if (payload.hd !== 'gmail.com') return null
-
+  if (payload.email_verified !== true && payload.email_verified !== 'true') return null
   var userInfo = {
     email: payload.email,
     name: payload.name || payload.email.split('@')[0],
@@ -283,7 +449,11 @@ function verifyGoogleToken(token) {
 function handleVerifyGoogleToken(data) {
   var user = verifyGoogleToken(data.googleToken || '')
   if (!user) {
-    return sendJson({ success: false, error: 'Token tidak valid. Pastikan menggunakan akun @gmail.com' })
+    return sendJson({ success: false, error: 'Token Google tidak valid. Silakan coba masuk kembali.' })
+  }
+
+  if (data.registrationKey) {
+    return handleStudentRegistration(user, String(data.registrationKey).trim())
   }
 
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
@@ -311,20 +481,85 @@ function handleVerifyGoogleToken(data) {
     }
   }
 
-  if (!found) {
-    console.log({ msg: 'Guru not found', email: user.email, rows: dataRows.length, emailCol: emailCol })
-    return sendJson({ success: false, error: 'Email ' + user.email + ' tidak terdaftar sebagai guru. Hubungi administrator.' })
+  if (found) {
+    return sendJson({ success: true, data: Object.assign({}, user, { role: 'teacher' }) })
   }
 
-  return sendJson({ success: true, data: user })
+  var student = getSiswaByEmail(user.email)
+  if (student) {
+    return sendJson({
+      success: true,
+      data: {
+        email: user.email,
+        name: user.name || student.nama,
+        picture: user.picture || '',
+        role: 'student',
+        nis: student.nis,
+        namaSiswa: student.nama,
+        kelas: student.kelas,
+      },
+    })
+  }
+
+  return sendJson({
+    success: false,
+    error: 'Email ini belum terdaftar sebagai guru atau siswa. Jika Anda siswa, pilih menu Siswa, cari kelas dan nama, lalu lanjutkan dengan akun Google untuk mendaftarkan email. Jika Anda guru, hubungi administrator.',
+  })
+}
+
+function handleStudentRegistration(user, registrationKey) {
+  var cache = CacheService.getScriptCache()
+  var cachedSelection = cache.get('student_registration_' + registrationKey)
+  if (!cachedSelection) {
+    return sendJson({ success: false, error: 'Pilihan siswa kedaluwarsa. Pilih nama siswa kembali.' })
+  }
+
+  var selection = JSON.parse(cachedSelection)
+  var siswa = getSiswaByNis(selection.nis)
+  if (!siswa || siswa.kelas !== selection.kelas) {
+    cache.remove('student_registration_' + registrationKey)
+    return sendJson({ success: false, error: 'Data siswa tidak lagi sesuai. Pilih siswa kembali.' })
+  }
+
+  var email = String(user.email || '').trim().toLowerCase()
+  if (!email) return sendJson({ success: false, error: 'Email akun Google tidak ditemukan' })
+
+  var allSiswa = getAllSiswa()
+  for (var i = 0; i < allSiswa.length; i++) {
+    var existingEmail = String(allSiswa[i].email || '').trim().toLowerCase()
+    if (existingEmail && existingEmail === email && allSiswa[i].nis !== siswa.nis) {
+      return sendJson({ success: false, error: 'Email ini sudah terdaftar pada siswa lain.' })
+    }
+  }
+
+  var currentEmail = String(siswa.email || '').trim().toLowerCase()
+  if (currentEmail && currentEmail !== email) {
+    return sendJson({ success: false, error: 'Siswa ini sudah terdaftar dengan email lain. Hubungi guru untuk memperbarui data.' })
+  }
+  if (!currentEmail) setSiswaEmail(siswa.nis, email)
+
+  cache.remove('student_registration_' + registrationKey)
+  return sendJson({
+    success: true,
+    data: {
+      email: email,
+      name: user.name || siswa.nama,
+      picture: user.picture || '',
+      role: 'student',
+      nis: siswa.nis,
+      namaSiswa: siswa.nama,
+      kelas: siswa.kelas,
+    },
+  })
 }
 
 function ensureAllSheets() {
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
   var names = SHEET_NAMES
   var headers = {
-    Database_Siswa: ['NIS', 'Nama_Siswa', 'Kelas'],
+    Database_Siswa: ['NIS', 'Nama_Siswa', 'Kelas', 'Email'],
     Database_Rubrik: ['Kelas', 'Mapel', 'Aspek_Penilaian', 'Skor_4', 'Skor_3', 'Skor_2', 'Skor_1'],
+    Database_Soal: ['Kelas', 'Mapel', 'No_Soal', 'Kunci_Jawaban'],
     Hasil_Penilaian: ['Timestamp', 'NIS', 'Nama_Siswa', 'Kelas', 'Mapel', 'Hasil_OCR', 'Skor_Analitik', 'Feedback_AI', 'Rekomendasi', 'Total_Skor', 'Total_Maks'],
     Database_Kelas: ['Kelas'],
     Database_Mapel: ['Mapel'],
@@ -338,6 +573,7 @@ function ensureAllSheets() {
       if (headers[sheetName]) sheet.appendRow(headers[sheetName])
     }
   }
+  _ensureSiswaEmailColumn()
 }
 
 function sendJson(obj) {

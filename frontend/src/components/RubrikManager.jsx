@@ -18,7 +18,12 @@ export default function RubrikManager() {
   const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
-    loadData()
+    let active = true
+    fetchAllRubrik()
+      .then((data) => { if (active) setRubrikList(data) })
+      .catch((err) => { if (active) setToast({ message: err.message, type: 'error' }) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [])
 
   const loadData = async () => {
@@ -270,8 +275,8 @@ export default function RubrikManager() {
         open={importOpen}
         type="rubrik"
         onImport={async (rows) => {
-          await importRubrik(rows)
-          showToast(`${rows.length} rubrik berhasil diimport`)
+          const result = await importRubrik(rows)
+          showToast(`${result.rubrikImported} rubrik esai dan ${result.soalImported} kunci PG berhasil diimport`)
           setImportOpen(false)
           loadData()
         }}

@@ -64,25 +64,27 @@ function _extractJson(text) {
   return parsed
 }
 
-function extractTextFromImage(base64Image) {
-  var cleanImage = base64Image
-  if (cleanImage.indexOf(',') > -1) {
-    cleanImage = cleanImage.split(',')[1]
+function extractTextFromImage(images) {
+  if (!Array.isArray(images)) images = [{ data: images, mimeType: 'image/jpeg' }]
+  var parts = [{
+    text: 'Ekstrak semua teks yang tertulis pada seluruh gambar lembar jawaban berikut. Gambar disusun berurutan sesuai nomor halaman. Tulis persis seperti yang terlihat, termasuk ejaan dan angka, serta pertahankan urutan teks per halaman.',
+  }]
+  for (var i = 0; i < images.length; i++) {
+    var image = images[i]
+    var cleanImage = String(image.data || '')
+    if (cleanImage.indexOf(',') > -1) cleanImage = cleanImage.split(',')[1]
+    parts.push({ text: 'Halaman ' + (i + 1) + (image.fileName ? ' (' + image.fileName + ')' : '') + ':' })
+    parts.push({
+      inlineData: {
+        mimeType: image.mimeType || 'image/jpeg',
+        data: cleanImage,
+      },
+    })
   }
-
-  var prompt = 'Ekstrak semua teks yang tertulis pada gambar ini. Tulis persis seperti yang terlihat, termasuk ejaan dan angka.'
 
   var payload = {
     contents: [{
-      parts: [
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: cleanImage,
-          },
-        },
-      ],
+      parts: parts,
     }],
     generationConfig: {
       temperature: 0.1,

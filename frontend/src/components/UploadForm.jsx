@@ -1,15 +1,17 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { fetchSiswaByKelas } from '../services/siswaApi'
 import { fetchAllKelas } from '../services/kelasApi'
 import { fetchAllMapel } from '../services/mapelApi'
+
+const MAX_IMAGES = 10
+const MAX_TOTAL_SIZE = 15 * 1024 * 1024
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(' ')
 }
 
 export default function UploadForm({ onSubmit, loading }) {
-  const [image, setImage] = useState(null)
-  const [preview, setPreview] = useState(null)
+  const [images, setImages] = useState([])
   const [nis, setNis] = useState('')
   const [kelas, setKelas] = useState('')
   const [mapel, setMapel] = useState('')
@@ -28,59 +30,60 @@ export default function UploadForm({ onSubmit, loading }) {
   }, [])
 
   useEffect(() => {
-    if (kelas) {
-      setNisLoading(true)
-      setSiswaTerpilih(null)
-      setNis('')
-      ;(async () => {
-        try {
-          const data = await fetchSiswaByKelas(kelas)
-          setSiswaList(data)
-        } catch {
-          setSiswaList([])
-        } finally {
-          setNisLoading(false)
-        }
-      })()
-    } else {
-      setSiswaList([])
-      setSiswaTerpilih(null)
-    }
+    if (!kelas) return
+    let active = true
+    fetchSiswaByKelas(kelas)
+      .then((data) => { if (active) setSiswaList(data) })
+      .catch(() => { if (active) setSiswaList([]) })
+      .finally(() => { if (active) setNisLoading(false) })
+    return () => { active = false }
   }, [kelas])
 
-  const handleFile = useCallback((file) => {
-    if (!file) return
+  const handleFiles = (fileList) => {
+    const selectedFiles = Array.from(fileList || [])
+    if (selectedFiles.length === 0) return
 
-    if (!file.type.startsWith('image/')) {
-      setErrors((prev) => ({ ...prev, image: 'Hanya file gambar yang diizinkan' }))
+    const invalidFile = selectedFiles.find((file) => !file.type.startsWith('image/'))
+    if (invalidFile) {
+      setErrors((prev) => ({ ...prev, image: `${invalidFile.name}: hanya file gambar yang diizinkan` }))
       return
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, image: 'Ukuran file maksimal 10MB' }))
+    const oversizedFile = selectedFiles.find((file) => file.size > 10 * 1024 * 1024)
+    if (oversizedFile) {
+      setErrors((prev) => ({ ...prev, image: `${oversizedFile.name}: ukuran file maksimal 10MB` }))
       return
     }
 
-    setImage(file)
+    const newFiles = selectedFiles.filter((file) => !images.some((item) => item.file.name === file.name && item.file.size === file.size))
+    if (images.length + newFiles.length > MAX_IMAGES) {
+      setErrors((prev) => ({ ...prev, image: `Maksimal ${MAX_IMAGES} gambar untuk satu penilaian` }))
+      return
+    }
+    const totalSize = [...images.map((item) => item.file.size), ...newFiles.map((file) => file.size)].reduce((sum, size) => sum + size, 0)
+    if (totalSize > MAX_TOTAL_SIZE) {
+      setErrors((prev) => ({ ...prev, image: 'Ukuran total seluruh gambar maksimal 15MB' }))
+      return
+    }
+
+    setImages((current) => {
+      const additions = selectedFiles
+        .filter((file) => !current.some((item) => item.file.name === file.name && item.file.size === file.size))
+        .map((file) => ({ file, preview: URL.createObjectURL(file) }))
+      return [...current, ...additions]
+    })
     setErrors((prev) => {
       const next = { ...prev }
       delete next.image
       return next
     })
+  }
 
-    const reader = new FileReader()
-    reader.onloadend = () => setPreview(reader.result)
-    reader.readAsDataURL(file)
-  }, [])
-
-  const handleDrop = useCallback(
-    (e) => {
-      e.preventDefault()
-      setDragOver(false)
-      handleFile(e.dataTransfer.files[0])
-    },
-    [handleFile]
-  )
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    handleFiles(e.dataTransfer.files)
+  }
 
   const handleDragOver = (e) => {
     e.preventDefault()
@@ -103,11 +106,20 @@ export default function UploadForm({ onSubmit, loading }) {
     }
   }
 
+  const handleSelectKelas = (e) => {
+    const selectedKelas = e.target.value
+    setNis('')
+    setSiswaTerpilih(null)
+    setSiswaList([])
+    setNisLoading(Boolean(selectedKelas))
+    setKelas(selectedKelas)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
     const newErrors = {}
-    if (!image) newErrors.image = 'Pilih gambar lembar jawaban'
+    if (images.length === 0) newErrors.image = 'Pilih minimal satu gambar lembar jawaban'
     if (!nis) newErrors.nis = 'Pilih siswa'
     if (!kelas) newErrors.kelas = 'Pilih kelas'
     if (!mapel) newErrors.mapel = 'Pilih mata pelajaran'
@@ -115,23 +127,28 @@ export default function UploadForm({ onSubmit, loading }) {
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result.split(',')[1]
-      onSubmit({
-        imageBase64: base64,
-        nis,
-        kelas,
-        mapel,
-        fileName: image.name,
+    const toBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({
+        data: String(reader.result).split(',')[1],
+        mimeType: file.type || 'image/jpeg',
+        fileName: file.name,
       })
+      reader.onerror = () => reject(new Error(`Gagal membaca file ${file.name}`))
+      reader.readAsDataURL(file)
+    })
+
+    try {
+      const scannedImages = await Promise.all(images.map(({ file }) => toBase64(file)))
+      onSubmit({ images: scannedImages, nis, kelas, mapel })
+    } catch (err) {
+      setErrors({ image: err.message })
     }
-    reader.readAsDataURL(image)
   }
 
   const resetForm = () => {
-    setImage(null)
-    setPreview(null)
+    images.forEach(({ preview }) => URL.revokeObjectURL(preview))
+    setImages([])
     setNis('')
     setKelas('')
     setMapel('')
@@ -161,7 +178,7 @@ export default function UploadForm({ onSubmit, loading }) {
             'relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200',
             dragOver
               ? 'border-primary bg-primary-light'
-              : preview
+              : images.length > 0
               ? 'border-secondary bg-secondary-light'
               : 'border-border bg-gray-50 hover:border-primary hover:bg-primary-light/40'
           )}
@@ -170,33 +187,50 @@ export default function UploadForm({ onSubmit, loading }) {
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             capture="environment"
-            onChange={(e) => handleFile(e.target.files[0])}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              handleFiles(e.target.files)
+              e.target.value = ''
+            }}
             className="hidden"
           />
 
-          {preview ? (
+          {images.length > 0 ? (
             <div className="space-y-3">
-              <img
-                src={preview}
-                alt="Preview lembar jawaban"
-                className="max-h-52 mx-auto rounded-lg object-contain shadow-sm"
-              />
-              <p className="text-xs text-text-muted">
-                {image?.name} ({(image?.size / 1024 / 1024).toFixed(1)}MB)
-              </p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setImage(null)
-                  setPreview(null)
-                  if (fileInputRef.current) fileInputRef.current.value = ''
-                }}
-                className="text-xs text-danger hover:text-danger/80 underline"
-              >
-                Hapus & pilih ulang
-              </button>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {images.map(({ file, preview }, index) => (
+                  <div key={`${file.name}-${file.size}`} className="relative rounded-lg border border-border bg-white p-2 text-left">
+                    <img src={preview} alt={`Pratinjau lembar ${index + 1}`} className="h-32 w-full rounded-md object-contain" />
+                    <p className="mt-2 truncate text-xs font-medium text-text">{index + 1}. {file.name}</p>
+                    <p className="text-xs text-text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                    <button
+                      type="button"
+                      aria-label={`Hapus ${file.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        URL.revokeObjectURL(preview)
+                        setImages((current) => current.filter((item) => item.preview !== preview))
+                      }}
+                      className="mt-1 text-xs font-medium text-danger hover:text-danger/80"
+                    >Hapus</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <p className="text-xs text-text-muted">{images.length} lembar dipilih.</p>
+                {images.length < MAX_IMAGES && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      fileInputRef.current?.click()
+                    }}
+                    className="text-xs font-semibold text-primary hover:text-primary-dark"
+                  >Tambah lembar</button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -207,10 +241,10 @@ export default function UploadForm({ onSubmit, loading }) {
               </div>
               <div>
                 <p className="text-sm font-medium text-text">
-                  Klik atau drag & drop gambar di sini
+                  Klik atau drag & drop satu atau beberapa gambar di sini
                 </p>
                 <p className="text-xs text-text-muted mt-1">
-                  Format: JPG, PNG (maks. 10MB)
+                  Maks. 10 gambar, 10MB per file, 15MB total. Pilih halaman secara berurutan.
                 </p>
               </div>
             </div>
@@ -219,7 +253,7 @@ export default function UploadForm({ onSubmit, loading }) {
 
         {errors.image && (
           <p className="mt-2 text-xs text-danger flex items-center gap-1">
-            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             {errors.image}
@@ -243,7 +277,7 @@ export default function UploadForm({ onSubmit, loading }) {
             </label>
             <select
               value={kelas}
-              onChange={(e) => setKelas(e.target.value)}
+              onChange={handleSelectKelas}
               className={classNames(
                 'w-full px-3 py-2.5 rounded-lg border bg-white text-sm transition-all duration-150 appearance-none',
                 errors.kelas ? 'border-danger ring-1 ring-danger/20' : 'border-border focus:border-primary focus:ring-1 focus:ring-primary/20'
@@ -325,7 +359,7 @@ export default function UploadForm({ onSubmit, loading }) {
 
         {siswaTerpilih && (
           <div className="flex items-center gap-2 px-3 py-2 bg-primary-light/50 rounded-lg text-sm text-primary">
-            <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
             </svg>
             <span>
@@ -365,7 +399,7 @@ export default function UploadForm({ onSubmit, loading }) {
           )}
         </button>
 
-        {image && (
+        {images.length > 0 && (
           <button
             type="button"
             onClick={resetForm}

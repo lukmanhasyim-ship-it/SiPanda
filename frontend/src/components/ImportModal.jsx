@@ -15,6 +15,8 @@ const COLUMN_MAP = {
     { key: 'skor_3', label: 'Skor 3', aliases: ['Skor_3', 'Skor 3', 'skor_3'] },
     { key: 'skor_2', label: 'Skor 2', aliases: ['Skor_2', 'Skor 2', 'skor_2'] },
     { key: 'skor_1', label: 'Skor 1', aliases: ['Skor_1', 'Skor 1', 'skor_1'] },
+    { key: 'no_soal', label: 'No. Soal', aliases: ['No_Soal', 'No. Soal', 'No Soal', 'Nomor_Soal', 'Nomor Soal', 'No', 'Nomor'] },
+    { key: 'kunci_jawaban', label: 'Kunci Jawaban', aliases: ['Kunci_Jawaban', 'Kunci Jawaban', 'Kunci', 'Jawaban_Benar'] },
   ],
 }
 
@@ -54,13 +56,16 @@ function mapColumns(raw, type) {
     return mapped
   }).filter((row) => {
     if (type === 'siswa') return row.nis && row.nama && row.kelas
-    if (type === 'rubrik') return row.kelas && row.mapel && row.aspek
+    if (type === 'rubrik') {
+      const rubricRow = row.kelas && row.mapel && row.aspek
+      const answerKey = row.kelas && row.mapel && /^\d+$/.test(row.no_soal) && /^[ABCDE]$/i.test(row.kunci_jawaban)
+      return rubricRow || answerKey
+    }
     return false
   })
 }
 
 export default function ImportModal({ open, type, onImport, onClose }) {
-  const [raw, setRaw] = useState([])
   const [mapped, setMapped] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -69,7 +74,7 @@ export default function ImportModal({ open, type, onImport, onClose }) {
 
   if (!open) return null
 
-  const label = type === 'siswa' ? 'Siswa' : 'Rubrik'
+  const label = type === 'siswa' ? 'Siswa' : 'Rubrik & Kunci Jawaban'
   const columns = COLUMN_MAP[type]
 
   const handleFile = async (e) => {
@@ -80,7 +85,6 @@ export default function ImportModal({ open, type, onImport, onClose }) {
     setLoading(true)
     try {
       const json = await parseFile(file)
-      setRaw(json)
       const results = mapColumns(json, type)
       setMapped(results)
       if (results.length === 0) {
@@ -99,7 +103,6 @@ export default function ImportModal({ open, type, onImport, onClose }) {
     setLoading(true)
     try {
       await onImport(mapped)
-      setRaw([])
       setMapped([])
       setFileName('')
       if (fileRef.current) fileRef.current.value = ''
@@ -111,7 +114,6 @@ export default function ImportModal({ open, type, onImport, onClose }) {
   }
 
   const handleClose = () => {
-    setRaw([])
     setMapped([])
     setFileName('')
     setError('')
@@ -125,7 +127,8 @@ export default function ImportModal({ open, type, onImport, onClose }) {
     if (type === 'siswa') {
       headerRow.push(['2024001', 'Contoh Nama', 'X-A'])
     } else {
-      headerRow.push(['X-A', 'Matematika', 'Ketelitian', 'Sangat teliti', 'Teliti', 'Cukup', 'Kurang'])
+      headerRow.push(['X-A', 'Matematika', 'Ketelitian', 'Sangat teliti', 'Teliti', 'Cukup', 'Kurang', '', ''])
+      headerRow.push(['X-A', 'Matematika', '', '', '', '', '', '1', 'A'])
     }
     const ws = XLSX.utils.aoa_to_sheet(headerRow)
     XLSX.utils.book_append_sheet(wb, ws, 'Data')
@@ -188,9 +191,9 @@ export default function ImportModal({ open, type, onImport, onClose }) {
           {mapped.length > 0 && !loading && (
             <div>
               <p className="text-sm font-medium text-text mb-2">
-                {mapped.length} data siap diimport:
+                {mapped.length} baris rubrik dan/atau kunci siap diimport:
               </p>
-              <div className="border border-border rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+              <div className="border border-border rounded-xl overflow-auto max-h-60">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-border">
@@ -233,7 +236,7 @@ export default function ImportModal({ open, type, onImport, onClose }) {
             disabled={mapped.length === 0 || loading}
             className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
-            {loading ? 'Mengimport...' : `Import ${mapped.length} Data`}
+            {loading ? 'Mengimport...' : `Import ${mapped.length} Baris`}
           </button>
         </div>
       </div>

@@ -4,9 +4,10 @@ import { getCurrentUser, logout } from '../services/authStore'
 const NAV_ITEMS = [
   { id: 'upload', label: 'Penilaian', icon: '📝' },
   { id: 'siswa', label: 'Siswa', icon: '👥' },
-  { id: 'rubrik', label: 'Rubrik', icon: '📋' },
+  { id: 'rubrik', label: 'Manajemen Kunci', icon: '📋' },
   { id: 'kelas', label: 'Kelas', icon: '🏫' },
   { id: 'mapel', label: 'Mapel', icon: '📚' },
+  { id: 'nilai', label: 'Nilai Akhir', icon: '📈' },
   { id: 'history', label: 'Riwayat', icon: '📊' },
 ]
 

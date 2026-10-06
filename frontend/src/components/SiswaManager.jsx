@@ -17,7 +17,14 @@ export default function SiswaManager() {
   const [toast, setToast] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    let active = true
+    fetchAllSiswa()
+      .then((data) => { if (active) setSiswaList(data) })
+      .catch((err) => { if (active) setToast({ message: err.message, type: 'error' }) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
 
   const loadData = async () => {
     try {
@@ -124,7 +131,7 @@ export default function SiswaManager() {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <div className="flex-1 min-w-[200px] relative">
+        <div className="flex-1 min-w-50 relative">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -177,6 +184,7 @@ export default function SiswaManager() {
                   <th className="text-left px-4 py-3 font-medium text-text-muted text-xs uppercase tracking-wider">NIS</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted text-xs uppercase tracking-wider">Nama Siswa</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted text-xs uppercase tracking-wider">Kelas</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted text-xs uppercase tracking-wider">Email Google</th>
                   <th className="text-right px-4 py-3 font-medium text-text-muted text-xs uppercase tracking-wider">Aksi</th>
                 </tr>
               </thead>
@@ -189,6 +197,21 @@ export default function SiswaManager() {
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary-light text-primary">
                         {siswa.kelas}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {siswa.email ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-secondary-light px-2 py-0.5 text-xs font-medium text-secondary">
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Terdaftar
+                          </span>
+                          <p className="text-xs text-text-muted">{siswa.email}</p>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-text-muted">Belum terdaftar</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleEdit(siswa)} className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary-light/50 transition-colors" title="Edit">

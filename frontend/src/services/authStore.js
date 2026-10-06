@@ -2,16 +2,21 @@ import { callGAS } from './gas'
 
 const AUTH_KEY = 'sipanda_auth'
 
-export async function googleLogin(credential) {
+export async function googleLogin(credential, registrationKey = '') {
   const result = await callGAS({
     action: 'verifyGoogleToken',
     googleToken: credential,
+    registrationKey,
   })
   if (!result.success) throw new Error(result.error || 'Gagal verifikasi token')
   const session = {
     email: result.data.email,
     name: result.data.name,
     picture: result.data.picture,
+    role: result.data.role || 'teacher',
+    nis: result.data.nis || '',
+    namaSiswa: result.data.namaSiswa || '',
+    kelas: result.data.kelas || '',
     token: credential,
     loggedInAt: new Date().toISOString(),
   }

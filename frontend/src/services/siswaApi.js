@@ -10,6 +10,16 @@ export async function fetchSiswaByKelas(kelas) {
   return res.data
 }
 
+export async function fetchRegistrationClasses() {
+  const res = await callGAS({ action: 'getRegistrationClasses' })
+  return res.data
+}
+
+export async function fetchRegistrationStudents(kelas) {
+  const res = await callGAS({ action: 'getRegistrationStudents', kelas })
+  return res.data
+}
+
 export async function addSiswa({ nis, nama, kelas }) {
   const res = await callGAS({ action: 'addSiswa', nis, nama, kelas })
   return res.data

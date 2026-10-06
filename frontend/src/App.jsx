@@ -2,21 +2,26 @@ import { useState } from 'react'
 import Layout from './components/Layout'
 import LoginPage from './components/LoginPage'
 import UploadForm from './components/UploadForm'
+import ReviewAnswers from './components/ReviewAnswers'
 import ResultCard from './components/ResultCard'
 import LoadingSpinner from './components/LoadingSpinner'
 import History from './components/History'
-import RubrikManager from './components/RubrikManager'
+import FinalGrades from './components/FinalGrades'
+import KeyManagement from './components/KeyManagement'
 import SiswaManager from './components/SiswaManager'
 import KelasManager from './components/KelasManager'
 import MapelManager from './components/MapelManager'
-import { processAnswer } from './services/hasilApi'
-import { isLoggedIn } from './services/authStore'
+import StudentDashboard from './components/StudentDashboard'
+import { processAnswer, submitAssessmentReview } from './services/hasilApi'
+import { getCurrentUser, isLoggedIn, logout } from './services/authStore'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(isLoggedIn())
+  const [currentUser, setCurrentUser] = useState(getCurrentUser())
   const [activeNav, setActiveNav] = useState('upload')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [aiReview, setAiReview] = useState(null)
   const [error, setError] = useState(null)
 
   const handleSubmit = async (formData) => {
@@ -27,7 +32,7 @@ export default function App() {
     try {
       const response = await processAnswer(formData)
       if (response.success) {
-        setResult(response.data)
+        setAiReview(response.data)
       } else {
         setError(response.error || 'Gagal memproses penilaian')
       }
@@ -38,10 +43,43 @@ export default function App() {
     }
   }
 
+  const handleSaveReview = async (reviewData) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await submitAssessmentReview({
+        ...reviewData,
+        aiResult: reviewData.aiResult || aiReview,
+      })
+      if (response.success) {
+        setResult(response.data)
+        setAiReview(null)
+      } else {
+        setError(response.error || 'Gagal menyimpan hasil review')
+      }
+    } catch (err) {
+      setError(err.message || 'Terjadi kesalahan saat menyimpan hasil review')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleReset = () => {
     setResult(null)
+    setAiReview(null)
     setError(null)
     setActiveNav('upload')
+  }
+
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user)
+    setAuthenticated(true)
+  }
+
+  const handleLogout = () => {
+    logout()
+    setCurrentUser(null)
+    setAuthenticated(false)
   }
 
   const renderContent = () => {
@@ -50,11 +88,15 @@ export default function App() {
     }
 
     if (activeNav === 'rubrik') {
-      return <RubrikManager />
+      return <KeyManagement />
     }
 
     if (activeNav === 'history') {
       return <History />
+    }
+
+    if (activeNav === 'nilai') {
+      return <FinalGrades />
     }
 
     if (activeNav === 'kelas') {
@@ -69,12 +111,16 @@ export default function App() {
       return <ResultCard data={result} onReset={handleReset} />
     }
 
+    if (aiReview) {
+      return <ReviewAnswers data={aiReview} onSubmit={handleSaveReview} loading={loading} />
+    }
+
     return (
       <div>
         {/* Error Alert */}
         {error && (
           <div className="max-w-2xl mx-auto mb-6 p-4 bg-danger-light border border-danger/30 rounded-xl flex items-start gap-3">
-            <svg className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-5 h-5 text-danger shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
             <div>
@@ -102,11 +148,15 @@ export default function App() {
   }
 
   if (!authenticated) {
-    return <LoginPage onLoginSuccess={() => setAuthenticated(true)} />
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />
+  }
+
+  if (currentUser?.role === 'student') {
+    return <StudentDashboard user={currentUser} onLogout={handleLogout} />
   }
 
   return (
-    <Layout activeNav={activeNav} onNavChange={setActiveNav} onLogout={() => setAuthenticated(false)}>
+    <Layout activeNav={activeNav} onNavChange={setActiveNav} onLogout={handleLogout}>
       {renderContent()}
     </Layout>
   )
