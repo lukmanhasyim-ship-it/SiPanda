@@ -1,8 +1,5 @@
-import { useEffect, useState } from 'react'
-import { fetchRiwayatHasil } from '../services/hasilApi'
-import { fetchAllKelas } from '../services/kelasApi'
-import { fetchAllMapel } from '../services/mapelApi'
-import { fetchAllSiswa } from '../services/siswaApi'
+import { useEffect, useState, useCallback } from 'react'
+import { fetchTeacherDashboard } from '../services/hasilApi'
 
 function parseScores(value) {
   if (Array.isArray(value)) return value
@@ -85,16 +82,35 @@ export default function TeacherDashboard({ user, onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     let active = true
-    Promise.all([fetchAllSiswa(), fetchAllKelas(), fetchAllMapel(), fetchRiwayatHasil(5000)])
-      .then(([siswa, kelas, mapel, hasil]) => {
-        if (active) setData({ siswa: siswa || [], kelas: kelas || [], mapel: mapel || [], hasil: hasil || [] })
+    setLoading(true)
+    setError('')
+
+    fetchTeacherDashboard()
+      .then((dashboardData) => {
+        if (active && dashboardData) {
+          setData({
+            siswa: dashboardData.siswa || [],
+            kelas: dashboardData.kelas || [],
+            mapel: dashboardData.mapel || [],
+            hasil: dashboardData.hasil || [],
+          })
+        }
       })
-      .catch((err) => { if (active) setError(err.message || 'Ringkasan dashboard gagal dimuat.') })
-      .finally(() => { if (active) setLoading(false) })
+      .catch((err) => {
+        if (active) setError(err.message || 'Ringkasan dashboard gagal dimuat.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    return loadDashboard()
+  }, [loadDashboard])
 
   const overview = buildOverview(data.hasil)
   const finalAverage = overview.length
@@ -120,7 +136,18 @@ export default function TeacherDashboard({ user, onNavigate }) {
         <div className="pointer-events-none absolute -right-2 -top-12 h-48 w-48 rounded-full border border-emerald-300/20" />
       </section>
 
-      {error && <p role="alert" className="rounded-md border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">{error}</p>}
+      {error && (
+        <div role="alert" className="flex items-center justify-between rounded-md border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={loadDashboard}
+            className="ml-4 font-semibold underline hover:text-danger/80"
+          >
+            Coba lagi
+          </button>
+        </div>
+      )}
 
       <section aria-label="Ringkasan data" className="grid grid-cols-2 gap-y-6 border-y border-border py-5 sm:grid-cols-4 sm:gap-0">
         <Metric label="Siswa terdaftar" value={loading ? '—' : data.siswa.length} detail={`${data.kelas.length} kelas`} tone="blue" />

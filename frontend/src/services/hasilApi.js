@@ -5,6 +5,32 @@ export async function fetchRiwayatHasil(limit = 50) {
   return res.data
 }
 
+export async function fetchTeacherDashboard() {
+  try {
+    const res = await callGAS({ action: 'getTeacherDashboard' })
+    if (res && res.data) return res.data
+  } catch {
+    // fallback to individual calls
+  }
+  const [siswaRes, kelasRes, mapelRes, hasilRes] = await Promise.allSettled([
+    callGAS({ action: 'getAllSiswa' }),
+    callGAS({ action: 'getAllKelas' }),
+    callGAS({ action: 'getAllMapel' }),
+    callGAS({ action: 'getRiwayatHasil', limit: 100 }),
+  ])
+  return {
+    siswa: siswaRes.status === 'fulfilled' && siswaRes.value ? siswaRes.value.data || [] : [],
+    kelas: kelasRes.status === 'fulfilled' && kelasRes.value ? kelasRes.value.data || [] : [],
+    mapel: mapelRes.status === 'fulfilled' && mapelRes.value ? mapelRes.value.data || [] : [],
+    hasil: hasilRes.status === 'fulfilled' && hasilRes.value ? hasilRes.value.data || [] : [],
+  }
+}
+
+export async function checkDatabaseConnection() {
+  const res = await callGAS({ action: 'checkConnection' })
+  return res.data
+}
+
 export async function fetchStudentDashboard() {
   const res = await callGAS({ action: 'getStudentDashboard' })
   return res.data

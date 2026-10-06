@@ -37,7 +37,16 @@ export async function callGAS(payload) {
       throw new Error('Server error: ' + response.status + ' ' + response.statusText)
     }
 
-    var data = await response.json()
+    var text = await response.text()
+    var data
+    try {
+      data = JSON.parse(text)
+    } catch {
+      if (text.includes('Halaman Tidak Ditemukan') || text.includes('tidak dapat membuka file')) {
+        throw new Error('Tidak dapat terhubung ke Google Apps Script/Spreadsheet. Pastikan izin akses dan SPREADSHEET_ID sudah benar.')
+      }
+      throw new Error('Respon server tidak valid: ' + (text ? text.slice(0, 120) : 'Kosong'))
+    }
 
     if (!data.success) {
       if (data.authError) {

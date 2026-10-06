@@ -12,7 +12,7 @@
  */
 
 function _getSheet(name, headers) {
-  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
+  var ss = getSpreadsheet()
   var sheet = ss.getSheetByName(name)
   if (!sheet) {
     sheet = ss.insertSheet(name)

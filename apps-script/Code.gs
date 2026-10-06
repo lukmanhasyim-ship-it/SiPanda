@@ -12,11 +12,73 @@
  */
 
 // ─── Konfigurasi ───────────────────────────────────────────
+var DEFAULT_SPREADSHEET_ID = '1GPujrXencCnlEmHx5gXPc4-MMdoIvYNmSG8lqGld4yw'
+var DEFAULT_GEMINI_KEY = 'AIzaSyB0sB2uoUlbzHKtd3HvpiYSx5Pf55yT0xE'
+var DEFAULT_VISION_KEY = 'AIzaSyANSOPo1ubTkkCHn9Y__4GU3zZpIGj0Eg8'
+
+function getSpreadsheetId() {
+  var prop = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID')
+  if (prop && prop.trim()) return prop.trim()
+  return DEFAULT_SPREADSHEET_ID
+}
+
+function getGeminiApiKey() {
+  var prop = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY')
+  if (prop && prop.trim()) return prop.trim()
+  return DEFAULT_GEMINI_KEY
+}
+
+function getCloudVisionApiKey() {
+  var prop = PropertiesService.getScriptProperties().getProperty('CLOUD_VISION_API_KEY')
+  if (prop && prop.trim()) return prop.trim()
+  return DEFAULT_VISION_KEY
+}
+
 var CONFIG = {
-  SPREADSHEET_ID:     PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'),
-  GEMINI_API_KEY:     PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
-  CLOUD_VISION_API_KEY: PropertiesService.getScriptProperties().getProperty('CLOUD_VISION_API_KEY'),
+  get SPREADSHEET_ID() { return getSpreadsheetId() },
+  get GEMINI_API_KEY() { return getGeminiApiKey() },
+  get CLOUD_VISION_API_KEY() { return getCloudVisionApiKey() },
   GOOGLE_CLIENT_ID:  '254150534305-3i5spnu6d114b4q969qi6k5ggvvreqqe.apps.googleusercontent.com',
+}
+
+function getSpreadsheet() {
+  var id = CONFIG.SPREADSHEET_ID
+  if (!id) {
+    throw new Error('SPREADSHEET_ID belum dikonfigurasi. Atur SPREADSHEET_ID di Script Properties atau Code.gs.')
+  }
+  try {
+    return SpreadsheetApp.openById(id)
+  } catch (err) {
+    throw new Error('Gagal membuka Google Spreadsheet dengan ID "' + id + '". Pastikan ID benar dan akun Google Apps Script memiliki izin akses Edit: ' + err.message)
+  }
+}
+
+function setupConfig(spreadsheetId, geminiKey, visionKey) {
+  var props = {
+    SPREADSHEET_ID: spreadsheetId || DEFAULT_SPREADSHEET_ID,
+    GEMINI_API_KEY: geminiKey || DEFAULT_GEMINI_KEY,
+    CLOUD_VISION_API_KEY: visionKey || DEFAULT_VISION_KEY,
+  }
+  PropertiesService.getScriptProperties().setProperties(props)
+  return 'Konfigurasi tersimpan: ' + JSON.stringify(props)
+}
+
+function checkSpreadsheetConnection() {
+  try {
+    var ss = getSpreadsheet()
+    return {
+      connected: true,
+      spreadsheetId: CONFIG.SPREADSHEET_ID,
+      title: ss.getName(),
+      sheets: ss.getSheets().map(function (s) { return s.getName() }),
+    }
+  } catch (err) {
+    return {
+      connected: false,
+      spreadsheetId: CONFIG.SPREADSHEET_ID,
+      error: err.message,
+    }
+  }
 }
 
 var SHEET_NAMES = {
@@ -32,7 +94,12 @@ var SHEET_NAMES = {
 // ─── Entry Point ───────────────────────────────────────────
 
 function doGet() {
-  return sendJson({ success: true, message: 'Sipanda API is running' })
+  var dbStatus = checkSpreadsheetConnection()
+  return sendJson({
+    success: true,
+    message: 'Sipanda API is running',
+    database: dbStatus,
+  })
 }
 
 function doPost(e) {
@@ -41,6 +108,10 @@ function doPost(e) {
     var action = data.action || ''
 
     ensureAllSheets()
+
+    if (action === 'checkConnection') {
+      return sendJson({ success: true, data: checkSpreadsheetConnection() })
+    }
 
     if (action === 'verifyGoogleToken') {
       return handleVerifyGoogleToken(data)
@@ -70,23 +141,21 @@ function doPost(e) {
       })
     }
 
-    if (action === 'getStudentDashboard') {
-      var studentUser = verifyGoogleToken(data.googleToken || '')
-      if (!studentUser) return sendJson({ success: false, authError: true, error: 'Token Google siswa tidak valid. Silakan masuk kembali.' })
-      var linkedStudent = getSiswaByEmail(studentUser.email)
-      if (!linkedStudent) return sendJson({ success: false, authError: true, error: 'Email ini tidak terhubung ke data siswa.' })
-      return sendJson({
-        success: true,
-        data: {
-          siswa: { nis: linkedStudent.nis, nama: linkedStudent.nama, kelas: linkedStudent.kelas },
-          hasil: getAllHasilByNis(linkedStudent.nis),
-        },
-      })
-    }
-
     var user = requireAuth(data)
     if (!user) {
       return sendJson({ success: false, authError: true, error: 'Token tidak valid. Silakan masuk ulang.' })
+    }
+
+    if (action === 'getTeacherDashboard') {
+      return sendJson({
+        success: true,
+        data: {
+          siswa: getAllSiswa(),
+          kelas: getAllKelas(),
+          mapel: getAllMapel(),
+          hasil: getRiwayatHasil(100),
+        },
+      })
     }
 
     if (action === 'processAnswer') {
@@ -416,24 +485,34 @@ function requireAuth(data) {
 }
 
 function isRegisteredTeacherEmail(email) {
-  var sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(SHEET_NAMES.GURU)
-  if (!sheet) return false
-  var values = sheet.getDataRange().getValues()
-  if (values.length < 2) return false
-  var emailColumn = -1
-  for (var column = 0; column < values[0].length; column++) {
-    var header = String(values[0][column] || '').trim().toLowerCase()
-    if (header === 'email' || header === 'e-mail') {
-      emailColumn = column
-      break
-    }
-  }
-  if (emailColumn < 0) return false
+  if (!email) return false
   var normalizedEmail = String(email || '').trim().toLowerCase()
-  for (var row = 1; row < values.length; row++) {
-    if (String(values[row][emailColumn] || '').trim().toLowerCase() === normalizedEmail) return true
+  try {
+    var ss = getSpreadsheet()
+    var sheet = ss.getSheetByName(SHEET_NAMES.GURU)
+    if (!sheet) return false
+    var values = sheet.getDataRange().getValues()
+    if (values.length < 2) {
+      // Jika Database_Guru masih kosong, daftarkan guru yang masuk sebagai guru pertama
+      sheet.appendRow(['Guru Utama', normalizedEmail])
+      return true
+    }
+    var emailColumn = -1
+    for (var column = 0; column < values[0].length; column++) {
+      var header = String(values[0][column] || '').trim().toLowerCase()
+      if (header === 'email' || header === 'e-mail') {
+        emailColumn = column
+        break
+      }
+    }
+    if (emailColumn < 0) return false
+    for (var row = 1; row < values.length; row++) {
+      if (String(values[row][emailColumn] || '').trim().toLowerCase() === normalizedEmail) return true
+    }
+    return false
+  } catch (err) {
+    return false
   }
-  return false
 }
 
 function verifyGoogleToken(token) {
@@ -551,8 +630,10 @@ function handleStudentRegistration(user, registrationKey) {
   })
 }
 
+var _sheetsEnsured = false
 function ensureAllSheets() {
-  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
+  if (_sheetsEnsured) return
+  var ss = getSpreadsheet()
   var names = SHEET_NAMES
   var headers = {
     Database_Siswa: ['NIS', 'Nama_Siswa', 'Kelas', 'Email'],
@@ -572,6 +653,7 @@ function ensureAllSheets() {
     }
   }
   _ensureSiswaEmailColumn()
+  _sheetsEnsured = true
 }
 
 function sendJson(obj) {
