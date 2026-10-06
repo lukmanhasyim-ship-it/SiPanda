@@ -80,7 +80,7 @@ export default function LoginPage({ onLoginSuccess }) {
           )}
 
           <p className="text-xs text-text-muted text-center mt-6">
-            Gunakan akun <strong>@guru.smk.belajar.id</strong> untuk masuk
+            Masuk dengan akun Google mana pun
           </p>
         </div>
       </div>

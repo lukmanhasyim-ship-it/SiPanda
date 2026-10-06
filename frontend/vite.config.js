@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/gas': {
-        target: 'https://script.google.com/a/macros/guru.smk.belajar.id',
+        target: 'https://script.google.com/a/macros/gmail.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/gas/, '/s/AKfycbwTaoQRklJ4JBBUn9hEaGnTOMrfQ87TgHmElI-T2lrUFHnpgtH2qe8BLaaq331qZiGJfg/exec'),
       },

@@ -268,7 +268,7 @@ function verifyGoogleToken(token) {
   var payload = JSON.parse(response.getContentText())
 
   if (payload.aud !== CONFIG.GOOGLE_CLIENT_ID) return null
-  if (payload.hd !== 'guru.smk.belajar.id') return null
+  if (payload.hd !== 'gmail.com') return null
 
   var userInfo = {
     email: payload.email,
@@ -283,7 +283,7 @@ function verifyGoogleToken(token) {
 function handleVerifyGoogleToken(data) {
   var user = verifyGoogleToken(data.googleToken || '')
   if (!user) {
-    return sendJson({ success: false, error: 'Token tidak valid. Pastikan menggunakan akun @guru.smk.belajar.id' })
+    return sendJson({ success: false, error: 'Token tidak valid. Pastikan menggunakan akun @gmail.com' })
   }
 
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
