@@ -410,7 +410,30 @@ function handleAssessmentReview(data) {
 function requireAuth(data) {
   var token = data.googleToken || ''
   if (!token) return null
-  return verifyGoogleToken(token)
+  var user = verifyGoogleToken(token)
+  if (!user || !isRegisteredTeacherEmail(user.email)) return null
+  return user
+}
+
+function isRegisteredTeacherEmail(email) {
+  var sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(SHEET_NAMES.GURU)
+  if (!sheet) return false
+  var values = sheet.getDataRange().getValues()
+  if (values.length < 2) return false
+  var emailColumn = -1
+  for (var column = 0; column < values[0].length; column++) {
+    var header = String(values[0][column] || '').trim().toLowerCase()
+    if (header === 'email' || header === 'e-mail') {
+      emailColumn = column
+      break
+    }
+  }
+  if (emailColumn < 0) return false
+  var normalizedEmail = String(email || '').trim().toLowerCase()
+  for (var row = 1; row < values.length; row++) {
+    if (String(values[row][emailColumn] || '').trim().toLowerCase() === normalizedEmail) return true
+  }
+  return false
 }
 
 function verifyGoogleToken(token) {
@@ -456,32 +479,7 @@ function handleVerifyGoogleToken(data) {
     return handleStudentRegistration(user, String(data.registrationKey).trim())
   }
 
-  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID)
-  var sheet = ss.getSheetByName(SHEET_NAMES.GURU)
-  var dataRows = sheet ? sheet.getDataRange().getValues() : []
-
-  var emailCol = -1
-  if (dataRows.length > 0) {
-    for (var c = 0; c < dataRows[0].length; c++) {
-      var h = String(dataRows[0][c]).trim().toLowerCase()
-      if (h === 'email' || h === 'e-mail') {
-        emailCol = c
-        break
-      }
-    }
-  }
-
-  var found = false
-  if (emailCol >= 0) {
-    for (var i = 1; i < dataRows.length; i++) {
-      if (String(dataRows[i][emailCol]).trim().toLowerCase() === user.email.toLowerCase()) {
-        found = true
-        break
-      }
-    }
-  }
-
-  if (found) {
+  if (isRegisteredTeacherEmail(user.email)) {
     return sendJson({ success: true, data: Object.assign({}, user, { role: 'teacher' }) })
   }
 
